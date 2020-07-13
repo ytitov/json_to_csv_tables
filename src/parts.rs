@@ -12,10 +12,12 @@ use std::io::{self, BufReader};
 pub struct Opts {
     pub in_file: String,
     pub out_folder: String,
-    #[clap(short, long, default_value = "ROOT")]
+    #[clap(short, long, default_value = "ROOT", about = "The root table")]
     pub root_table_name: String,
     #[clap(short, long, default_value = "_ID")]
     pub column_id_postfix: String,
+    #[clap(long, about = "This will indicate if the object represented by this table contains a value represented by the property named: CONTAINS_<what table it is in> The property name will be the last item delimited by _")]
+    pub child_prop_hint_columns: bool,
 }
 
 #[derive(Debug)]
@@ -245,6 +247,34 @@ impl Schema {
     }
     */
 
+    fn add_child_hint_column(
+        &mut self,
+        parents_info: &Option<(usize, &str)>,
+        parents: &Vec<String>,
+    ) {
+        if let Some((pk, parent_table)) = &parents_info {
+            let object_table_name = &parents[parents.len() - 1];
+            //println!("{:} - {:?}", &parent_table, &object_table_name);
+            let mut vals = BTreeMap::new();
+            vals.insert(
+                format!("CONTAINS_{}_{}", parent_table, object_table_name),
+                Value::Bool(true),
+            );
+            let parent_full_path = parents
+                .clone()
+                .into_iter()
+                .take(parents.len() - 1)
+                .collect::<Vec<String>>();
+            /*
+               println!(
+               "add these values to siblings {:?} OF: {:?}",
+               &vals, &parent_full_path
+               );
+               */
+            self.set_or_add_table_row(&parent_full_path, *pk, vals);
+        }
+    }
+
     pub fn trav(
         &mut self,
         depth: u16,
@@ -259,26 +289,9 @@ impl Schema {
                 let mut values = BTreeMap::new();
                 // create a hint that this table contains elements from another table
                 // not sure if this is that useful
-                if let Some((pk, parent_table)) = &parents_info {
-                    let object_table_name = &parents[parents.len() - 1];
-                    //println!("{:} - {:?}", &parent_table, &object_table_name);
-                    let mut vals = BTreeMap::new();
-                    vals.insert(
-                        format!("CONTAINS_{}_{}", parent_table, object_table_name),
-                        Value::Bool(true),
-                    );
-                    let parent_full_path = parents
-                        .clone()
-                        .into_iter()
-                        .take(parents.len() - 1)
-                        .collect::<Vec<String>>();
-                    /*
-                    println!(
-                        "add these values to siblings {:?} OF: {:?}",
-                        &vals, &parent_full_path
-                    );
-                    */
-                    self.set_or_add_table_row(&parent_full_path, *pk, vals);
+                
+                if self.opts.child_prop_hint_columns == true {
+                    self.add_child_hint_column(&parents_info, &parents);
                 }
 
                 for (key, val) in o {
