@@ -257,7 +257,7 @@ impl Schema {
             //println!("{:} - {:?}", &parent_table, &object_table_name);
             let mut vals = BTreeMap::new();
             vals.insert(
-                format!("CONTAINS_{}_{}", parent_table, object_table_name),
+                format!("CONTAINS_{}__{}", parent_table, object_table_name),
                 Value::Bool(true),
             );
             let parent_full_path = parents
@@ -340,9 +340,16 @@ impl Schema {
                     panic!("Got parents length of zero, this was unexpected");
                 }
                 for val in arr {
+                    println!("parents {:?} value: {:?}", &parents, &val);
+                    let parent_full_path = parents
+                        .clone()
+                        .into_iter()
+                        .take(parents.len() - 1)
+                        .collect::<Vec<String>>();
                     let v = self.trav(
                         depth + 1,
-                        Some((fk, &parents.as_slice().join("_"))),
+                        //Some((fk, &parents.as_slice().join("_"))),
+                        Some((fk, &parent_full_path.as_slice().join("_"))),
                         parents.clone(),
                         val.to_owned(),
                     );
