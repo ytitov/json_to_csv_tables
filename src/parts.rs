@@ -340,7 +340,10 @@ impl Schema {
                     panic!("Got parents length of zero, this was unexpected");
                 }
                 for val in arr {
-                    println!("parents {:?} value: {:?}", &parents, &val);
+                    //println!("parents {:?} value: {:?}", &parents, &val);
+                    // the parent table of these values.  The idea here is that the FK is from the
+                    // parent table of this array, but we continue passing the path that is one
+                    // level up (I'm still scratching my head on this one)
                     let parent_full_path = parents
                         .clone()
                         .into_iter()
