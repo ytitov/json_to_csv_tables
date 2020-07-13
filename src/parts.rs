@@ -60,6 +60,15 @@ impl Table {
         }
     }
 
+    pub fn set_last_row(&mut self, row: BTreeMap<String, Value>) {
+        if self.rows.len() > 0 {
+            let pk = self.rows.len() - 1;
+            self.set_row(pk, row);
+        } else {
+            println!("WARNING: set last row called on empty table");
+        }
+    }
+
     pub fn add_row(&mut self, row: BTreeMap<String, Value>) {
         for (key, _) in &row {
             self.columns.entry(key.to_owned()).or_insert(0);
@@ -170,6 +179,33 @@ impl Schema {
         }
     }
 
+    pub fn set_or_add_table_row(
+        &mut self,
+        tables: &[String],
+        idx: usize,
+        row: BTreeMap<String, Value>,
+    ) {
+        let table_name = tables.join("_");
+        if let Some(t) = self.data.get_mut(&table_name) {
+            if t.rows.len() > idx {
+                t.set_row(idx, row);
+            } else {
+                t.add_row(row);
+            }
+        } else {
+            panic!("set_row could not find the table, by this point this should not happen");
+        }
+    }
+
+    pub fn set_last_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
+        let table_name = tables.join("_");
+        if let Some(t) = self.data.get_mut(&table_name) {
+            t.set_last_row(row);
+        } else {
+            panic!("set_last_row could not find the table, by this point this should not happen");
+        }
+    }
+
     pub fn add_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
@@ -218,9 +254,32 @@ impl Schema {
     ) -> Option<Value> {
         match &val {
             Value::Object(o) => {
+                //println!("{:?} - {:?}", &parents_info, &parents);
                 let fk = self.create_entry(parents_info, &parents, &self.opts.clone());
                 let mut values = BTreeMap::new();
-                //println!("Obj Create: {:?}", &parents);
+                // create a hint that this table contains elements from another table
+                // not sure if this is that useful
+                if let Some((pk, parent_table)) = &parents_info {
+                    let object_table_name = &parents[parents.len() - 1];
+                    //println!("{:} - {:?}", &parent_table, &object_table_name);
+                    let mut vals = BTreeMap::new();
+                    vals.insert(
+                        format!("CONTAINS_{}_{}", parent_table, object_table_name),
+                        Value::Bool(true),
+                    );
+                    let parent_full_path = parents
+                        .clone()
+                        .into_iter()
+                        .take(parents.len() - 1)
+                        .collect::<Vec<String>>();
+                    /*
+                    println!(
+                        "add these values to siblings {:?} OF: {:?}",
+                        &vals, &parent_full_path
+                    );
+                    */
+                    self.set_or_add_table_row(&parent_full_path, *pk, vals);
+                }
 
                 for (key, val) in o {
                     let mut p = parents.clone();
@@ -248,9 +307,11 @@ impl Schema {
                             Value::from(pk),
                         );
                         // the fk will only be valid if there was parents_info
+                        // TODO: check this better
                         self.set_table_row(&parents, fk, values);
                     } else {
-                        self.add_table_row(&parents, values);
+                        //self.add_table_row(&parents, values);
+                        self.set_or_add_table_row(&parents, fk, values);
                     }
                 }
                 None
@@ -259,7 +320,7 @@ impl Schema {
                 // do not pass parent information of arrays
                 let fk = self.create_entry(None, &parents, &self.opts.clone());
 
-                let mut col_name = String::from("ERROR");
+                let col_name;
                 if parents.len() > 0 {
                     col_name = String::from(&parents[parents.len() - 1]);
                 } else {
@@ -309,7 +370,7 @@ impl Schema {
         for line in f.lines() {
             match serde_json::from_str(&line?) {
                 Ok::<Value, _>(val) => {
-                    self.trav(0, None, vec![String::from("ROOT")], val);
+                    self.trav(0, None, vec![String::from(&self.opts.root_table_name)], val);
                 }
                 Err(e) => {
                     println!("JsonError: {:?}", e);
