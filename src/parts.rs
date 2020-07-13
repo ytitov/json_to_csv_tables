@@ -3,9 +3,9 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
-use std::io::{self, BufReader};
-use std::io::prelude::*;
 use std::fs::File;
+use std::io::prelude::*;
+use std::io::{self, BufReader};
 
 #[derive(Clap, Debug, Clone)]
 #[clap(version = "1.0", author = "Yuri Titov <ytitov@gmail.com>")]
@@ -15,9 +15,8 @@ pub struct Opts {
     #[clap(short, long, default_value = "ROOT")]
     pub root_table_name: String,
     #[clap(short, long, default_value = "_ID")]
-    pub column_id_postfix: String
+    pub column_id_postfix: String,
 }
-
 
 #[derive(Debug)]
 pub struct Table {
@@ -125,7 +124,7 @@ impl fmt::Display for Table {
 pub struct Schema {
     // key: (depth, table name)
     pub data: HashMap<String, Table>,
-    pub opts: Opts
+    pub opts: Opts,
 }
 
 impl fmt::Display for Schema {
@@ -244,7 +243,10 @@ impl Schema {
                 //println!("Table => {:?}", &parents);
                 if values.len() > 0 {
                     if let Some((pk, parent_name)) = parents_info {
-                        values.insert(format!("{}{}", parent_name, &self.opts.column_id_postfix), Value::from(pk));
+                        values.insert(
+                            format!("{}{}", parent_name, &self.opts.column_id_postfix),
+                            Value::from(pk),
+                        );
                         // the fk will only be valid if there was parents_info
                         self.set_table_row(&parents, fk, values);
                     } else {
@@ -254,12 +256,14 @@ impl Schema {
                 None
             }
             Value::Array(arr) => {
-                //let fk = self.create_entry(parents_info, &parents);
+                // do not pass parent information of arrays
                 let fk = self.create_entry(None, &parents, &self.opts.clone());
 
                 let mut col_name = String::from("ERROR");
                 if parents.len() > 0 {
                     col_name = String::from(&parents[parents.len() - 1]);
+                } else {
+                    panic!("Got parents length of zero, this was unexpected");
                 }
                 for val in arr {
                     let v = self.trav(
@@ -273,21 +277,19 @@ impl Schema {
                             Value::Array(_) => {}
                             Value::Object(_) => {}
                             other => {
-                                //values.push(other.clone());
-                                //println!("array fk {} parent_info {:?}", fk, parents_info);
                                 let mut hs = BTreeMap::new();
-                                //hs.insert(parents.join("_"), other);
                                 hs.insert(col_name.clone(), other);
                                 if let Some((pk, parent_name)) = parents_info {
-                                    hs.insert(format!("{}{}", parent_name, &self.opts.column_id_postfix), Value::from(pk));
+                                    hs.insert(
+                                        format!("{}{}", parent_name, &self.opts.column_id_postfix),
+                                        Value::from(pk),
+                                    );
                                 }
                                 self.add_table_row(&parents, hs);
                             }
                         };
                     }
                 }
-                //println!("Array Table => {:?}", &parents);
-                //println!("  Row => {:?}", &values);
                 None
             }
             other => Some(other.to_owned()),
@@ -305,13 +307,12 @@ impl Schema {
         let f = BufReader::new(f);
 
         for line in f.lines() {
-            //println!("{}", line.unwrap());
             match serde_json::from_str(&line?) {
-                Ok::<Value,_>(val) => {
+                Ok::<Value, _>(val) => {
                     self.trav(0, None, vec![String::from("ROOT")], val);
                 }
                 Err(e) => {
-                    println!("ERROR: {:?}", e);
+                    println!("JsonError: {:?}", e);
                 }
             }
         }
