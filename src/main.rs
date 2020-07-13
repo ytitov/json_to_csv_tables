@@ -1,20 +1,12 @@
-use serde_json as json;
 mod parts;
-
 use clap::Clap;
+
 
 use parts::*;
 
-#[derive(Clap, Debug)]
-#[clap(version = "1.0", author = "Yuri Titov <ytitov@gmail.com>")]
-struct Opts {
-    pub in_file: String,
-    pub out_folder: String,
-}
-
 fn main() {
     let opts: Opts = Opts::parse();
-    let mut s = Schema::new(&opts.in_file, &opts.out_folder);
+    let s = Schema::new(opts.clone());
     match s.process_file() {
         Ok(_) => {
         },

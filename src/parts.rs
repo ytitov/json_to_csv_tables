@@ -1,3 +1,4 @@
+use clap::Clap;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -5,6 +6,18 @@ use std::fmt;
 use std::io::{self, BufReader};
 use std::io::prelude::*;
 use std::fs::File;
+
+#[derive(Clap, Debug, Clone)]
+#[clap(version = "1.0", author = "Yuri Titov <ytitov@gmail.com>")]
+pub struct Opts {
+    pub in_file: String,
+    pub out_folder: String,
+    #[clap(short, long, default_value = "ROOT")]
+    pub root_table_name: String,
+    #[clap(short, long, default_value = "_ID")]
+    pub column_id_postfix: String
+}
+
 
 #[derive(Debug)]
 pub struct Table {
@@ -22,10 +35,10 @@ impl Table {
         }
     }
 
-    pub fn create_entry(&mut self, parent_table: Option<(usize, &str)>) -> usize {
+    pub fn create_entry(&mut self, parent_table: Option<(usize, &str)>, opts: &Opts) -> usize {
         let pk = self.rows.len();
         if let Some((fk, parent_name)) = parent_table {
-            let col_name = format!("{}_id", parent_name);
+            let col_name = format!("{}{}", parent_name, &opts.column_id_postfix);
             self.columns.insert(col_name.clone(), 0);
             let mut hs = BTreeMap::new();
             hs.insert(col_name, Value::from(fk));
@@ -55,10 +68,10 @@ impl Table {
         self.rows.insert(self.rows.len(), row);
     }
 
-    pub fn export_csv(self, export_path: &str) {
+    pub fn export_csv(self, opts: &Opts) {
         use std::io::prelude::*;
         use std::path::Path;
-        let fname = format!("{}/{}.csv", export_path, &self.name);
+        let fname = format!("{}/{}.csv", &opts.out_folder, &self.name);
         let path = Path::new(&fname);
         let display = path.display();
 
@@ -68,8 +81,8 @@ impl Table {
         };
 
         // Write the `LOREM_IPSUM` string to `file`, returns `io::Result<()>`
-        let mut columns_str = format!("{}_id", self.name);
-        for (key, val) in &self.columns {
+        let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
+        for (key, _val) in &self.columns {
             columns_str.push_str(",");
             columns_str.push_str(&key);
         }
@@ -111,9 +124,8 @@ impl fmt::Display for Table {
 #[derive(Debug)]
 pub struct Schema {
     // key: (depth, table name)
-    pub input_file_path: String,
-    pub export_path: String,
     pub data: HashMap<String, Table>,
+    pub opts: Opts
 }
 
 impl fmt::Display for Schema {
@@ -126,17 +138,17 @@ impl fmt::Display for Schema {
 }
 
 impl Schema {
-    pub fn new(input_file_path: &str, export_path: &str) -> Self {
+    pub fn new(opts: Opts) -> Self {
         Schema {
             data: HashMap::new(),
-            input_file_path: input_file_path.to_owned(),
-            export_path: export_path.to_owned(),
+            opts,
         }
     }
     pub fn create_entry(
         &mut self,
         parent_table: Option<(usize, &str)>,
         tables: &[String],
+        opts: &Opts,
     ) -> usize {
         let table_name = tables.join("_");
         if !self.data.contains_key(&table_name) {
@@ -144,7 +156,7 @@ impl Schema {
             self.data.insert(table_name.clone(), t);
         }
         if let Some(t) = self.data.get_mut(&table_name) {
-            t.create_entry(parent_table)
+            t.create_entry(parent_table, opts)
         } else {
             panic!("Could not find table which is bizare");
         }
@@ -207,7 +219,7 @@ impl Schema {
     ) -> Option<Value> {
         match &val {
             Value::Object(o) => {
-                let fk = self.create_entry(parents_info, &parents);
+                let fk = self.create_entry(parents_info, &parents, &self.opts.clone());
                 let mut values = BTreeMap::new();
                 //println!("Obj Create: {:?}", &parents);
 
@@ -232,7 +244,7 @@ impl Schema {
                 //println!("Table => {:?}", &parents);
                 if values.len() > 0 {
                     if let Some((pk, parent_name)) = parents_info {
-                        values.insert(format!("{}_id", parent_name), Value::from(pk));
+                        values.insert(format!("{}{}", parent_name, &self.opts.column_id_postfix), Value::from(pk));
                         // the fk will only be valid if there was parents_info
                         self.set_table_row(&parents, fk, values);
                     } else {
@@ -243,7 +255,7 @@ impl Schema {
             }
             Value::Array(arr) => {
                 //let fk = self.create_entry(parents_info, &parents);
-                let fk = self.create_entry(None, &parents);
+                let fk = self.create_entry(None, &parents, &self.opts.clone());
 
                 let mut col_name = String::from("ERROR");
                 if parents.len() > 0 {
@@ -267,7 +279,7 @@ impl Schema {
                                 //hs.insert(parents.join("_"), other);
                                 hs.insert(col_name.clone(), other);
                                 if let Some((pk, parent_name)) = parents_info {
-                                    hs.insert(format!("{}_id", parent_name), Value::from(pk));
+                                    hs.insert(format!("{}{}", parent_name, &self.opts.column_id_postfix), Value::from(pk));
                                 }
                                 self.add_table_row(&parents, hs);
                             }
@@ -282,14 +294,14 @@ impl Schema {
         }
     }
 
-    pub fn export_csv(mut self) {
+    pub fn export_csv(self) {
         for (_, table) in self.data {
-            table.export_csv(&self.export_path);
+            table.export_csv(&self.opts);
         }
     }
 
     pub fn process_file(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let f = File::open(&self.input_file_path)?;
+        let f = File::open(&self.opts.in_file)?;
         let f = BufReader::new(f);
 
         for line in f.lines() {
