@@ -5,7 +5,7 @@ use std::fmt;
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{self, BufReader};
+use std::io::{BufReader};
 
 #[derive(Clap, Debug, Clone)]
 #[clap(version = "1.0", author = "Yuri Titov <ytitov@gmail.com>")]
@@ -16,8 +16,10 @@ pub struct Opts {
     pub root_table_name: String,
     #[clap(short, long, default_value = "_ID")]
     pub column_id_postfix: String,
+    /*
     #[clap(long, about = "This will indicate if the object represented by this table contains a value represented by the property named: CONTAINS_<what table it is in> The property name will be the last item delimited by _")]
     pub child_prop_hint_columns: bool,
+    */
 }
 
 #[derive(Debug)]
@@ -33,41 +35,6 @@ impl Table {
             name: name.to_owned(),
             columns: BTreeMap::new(),
             rows: BTreeMap::new(),
-        }
-    }
-
-    pub fn create_entry(&mut self, parent_table: Option<(usize, &str)>, opts: &Opts) -> usize {
-        let pk = self.rows.len();
-        if let Some((fk, parent_name)) = parent_table {
-            let col_name = format!("{}{}", parent_name, &opts.column_id_postfix);
-            self.columns.insert(col_name.clone(), 0);
-            let mut hs = BTreeMap::new();
-            hs.insert(col_name, Value::from(fk));
-            self.rows.insert(pk, hs);
-        }
-        pk
-    }
-
-    pub fn set_row(&mut self, pk: usize, row: BTreeMap<String, Value>) {
-        if let Some(existing_row) = self.rows.get_mut(&pk) {
-            for (col, value) in row {
-                existing_row.entry(col).or_insert(value);
-            }
-            for (key, _) in existing_row {
-                self.columns.entry(key.to_owned()).or_insert(0);
-            }
-        } else {
-            println!("set_row with pk: {} row: {:?} \ntable: {}", pk, row, self);
-            panic!("Tried to set row which does not exist");
-        }
-    }
-
-    pub fn set_last_row(&mut self, row: BTreeMap<String, Value>) {
-        if self.rows.len() > 0 {
-            let pk = self.rows.len() - 1;
-            self.set_row(pk, row);
-        } else {
-            println!("WARNING: set last row called on empty table");
         }
     }
 
@@ -154,25 +121,6 @@ impl Schema {
             opts,
         }
     }
-    /*
-    pub fn create_entry(
-        &mut self,
-        parent_table: Option<(usize, &str)>,
-        tables: &[String],
-        opts: &Opts,
-    ) -> usize {
-        let table_name = tables.join("_");
-        if !self.data.contains_key(&table_name) {
-            let t = Table::new(&table_name);
-            self.data.insert(table_name.clone(), t);
-        }
-        if let Some(t) = self.data.get_mut(&table_name) {
-            t.create_entry(parent_table, opts)
-        } else {
-            panic!("Could not find table which is bizare");
-        }
-    }
-    */
 
     pub fn create_table(&mut self, table_name: String) {
         if !self.data.contains_key(&table_name) {
@@ -180,17 +128,6 @@ impl Schema {
             self.data.insert(table_name, t);
         }
     }
-
-    /*
-    pub fn set_table_row(&mut self, tables: &[String], idx: usize, row: BTreeMap<String, Value>) {
-        let table_name = tables.join("_");
-        if let Some(t) = self.data.get_mut(&table_name) {
-            t.set_row(idx, row);
-        } else {
-            panic!("set_row could not find the table, by this point this should not happen");
-        }
-    }
-    */
 
     pub fn get_num_table_rows(&mut self, tables: &[String]) -> usize {
         let table_name = tables.join("_");
@@ -200,37 +137,6 @@ impl Schema {
             panic!("set_row could not find the table, by this point this should not happen");
         }
     }
-
-    /*
-    pub fn set_or_add_table_row(
-        &mut self,
-        tables: &[String],
-        idx: usize,
-        row: BTreeMap<String, Value>,
-    ) {
-        let table_name = tables.join("_");
-        if let Some(t) = self.data.get_mut(&table_name) {
-            if t.rows.len() > idx {
-                t.set_row(idx, row);
-            } else {
-                t.add_row(row);
-            }
-        } else {
-            panic!("set_row could not find the table, by this point this should not happen");
-        }
-    }
-    */
-
-    /*
-    pub fn set_last_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
-        let table_name = tables.join("_");
-        if let Some(t) = self.data.get_mut(&table_name) {
-            t.set_last_row(row);
-        } else {
-            panic!("set_last_row could not find the table, by this point this should not happen");
-        }
-    }
-    */
 
     pub fn add_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
         let table_name = tables.join("_");
@@ -302,142 +208,6 @@ impl Schema {
         }
     }
 
-    /*
-    fn add_child_hint_column(
-        &mut self,
-        parents_info: &Option<(usize, &str)>,
-        parents: &Vec<String>,
-    ) {
-        if let Some((pk, parent_table)) = &parents_info {
-            let object_table_name = &parents[parents.len() - 1];
-            //println!("{:} - {:?}", &parent_table, &object_table_name);
-            let mut vals = BTreeMap::new();
-            vals.insert(
-                format!("CONTAINS_{}__{}", parent_table, object_table_name),
-                Value::Bool(true),
-            );
-            let parent_full_path = parents
-                .clone()
-                .into_iter()
-                .take(parents.len() - 1)
-                .collect::<Vec<String>>();
-            /*
-               println!(
-               "add these values to siblings {:?} OF: {:?}",
-               &vals, &parent_full_path
-               );
-               */
-            self.set_or_add_table_row(&parent_full_path, *pk, vals);
-        }
-    }
-*/
-
-    /*
-    pub fn trav(
-        &mut self,
-        depth: u16,
-        parents_info: Option<(usize, &str)>,
-        parents: Vec<String>,
-        val: Value,
-    ) -> Option<Value> {
-        match &val {
-            Value::Object(o) => {
-                //println!("{:?} - {:?}", &parents_info, &parents);
-                let fk = self.create_entry(parents_info, &parents, &self.opts.clone());
-                let mut values = BTreeMap::new();
-                // create a hint that this table contains elements from another table
-                // not sure if this is that useful
-                
-                if self.opts.child_prop_hint_columns == true {
-                    self.add_child_hint_column(&parents_info, &parents);
-                }
-
-                for (key, val) in o {
-                    let mut p = parents.clone();
-                    p.push(key.clone());
-                    if let Some(v) = self.trav(
-                        depth + 1,
-                        Some((fk, &parents.as_slice().join("_"))),
-                        p,
-                        val.to_owned(),
-                    ) {
-                        match v {
-                            Value::Array(_) => {}
-                            Value::Object(_) => {}
-                            other => {
-                                values.insert(key.clone(), other);
-                            }
-                        };
-                    }
-                }
-                //println!("Table => {:?}", &parents);
-                if values.len() > 0 {
-                    if let Some((pk, parent_name)) = parents_info {
-                        values.insert(
-                            format!("{}{}", parent_name, &self.opts.column_id_postfix),
-                            Value::from(pk),
-                        );
-                        // the fk will only be valid if there was parents_info
-                        // TODO: check this better
-                        self.set_table_row(&parents, fk, values);
-                    } else {
-                        //self.add_table_row(&parents, values);
-                        self.set_or_add_table_row(&parents, fk, values);
-                    }
-                }
-                None
-            }
-            Value::Array(arr) => {
-                // do not pass parent information of arrays
-                let fk = self.create_entry(None, &parents, &self.opts.clone());
-
-                let col_name;
-                if parents.len() > 0 {
-                    col_name = String::from(&parents[parents.len() - 1]);
-                } else {
-                    panic!("Got parents length of zero, this was unexpected");
-                }
-                for val in arr {
-                    //println!("parents {:?} value: {:?}", &parents, &val);
-                    // the parent table of these values.  The idea here is that the FK is from the
-                    // parent table of this array, but we continue passing the path that is one
-                    // level up (I'm still scratching my head on this one)
-                    let parent_full_path = parents
-                        .clone()
-                        .into_iter()
-                        .take(parents.len() - 1)
-                        .collect::<Vec<String>>();
-                    let v = self.trav(
-                        depth + 1,
-                        //Some((fk, &parents.as_slice().join("_"))),
-                        Some((fk, &parent_full_path.as_slice().join("_"))),
-                        parents.clone(),
-                        val.to_owned(),
-                    );
-                    if let Some(v) = v {
-                        match v {
-                            Value::Array(_) => {}
-                            Value::Object(_) => {}
-                            other => {
-                                let mut hs = BTreeMap::new();
-                                hs.insert(col_name.clone(), other);
-                                if let Some((pk, parent_name)) = parents_info {
-                                    hs.insert(
-                                        format!("{}{}", parent_name, &self.opts.column_id_postfix),
-                                        Value::from(pk),
-                                    );
-                                }
-                                self.add_table_row(&parents, hs);
-                            }
-                        };
-                    }
-                }
-                None
-            }
-            other => Some(other.to_owned()),
-        }
-    }
-    */
 
     pub fn export_csv(self) {
         for (_, table) in self.data {
