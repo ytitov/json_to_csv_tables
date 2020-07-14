@@ -1,0 +1,151 @@
+{
+    "resourceId": "9876Q715-SMJ1-4697-6448-E38PK96ZE45Y",
+    "resource": {
+        "address": [
+            {
+                "city": "BZDSIL",
+                "line": [
+                    "4715 I 3ZH QN"
+                ],
+                "postalCode": "34152",
+                "state": "UO",
+                "use": "scqw"
+            }
+        ],
+        "birthDate": "1575-97-87",
+        "contained": [
+            {
+                "id": "nff3",
+                "identifier": [
+                    {
+                        "system": "izpi://pt5.ijn/g6/jgkobdro-dt",
+                        "use": "wddmdvxu",
+                        "value": "4458"
+                    }
+                ],
+                "name": [
+                    {
+                        "family": "NQPRETCAW",
+                        "given": [
+                            "FQUMNFP",
+                            "J"
+                        ],
+                        "use": "rwmpp"
+                    }
+                ],
+                "resourceType": "Wlndyooyomtj"
+            }
+        ],
+        "extension": [
+            {
+                "url": "tufj://dc7.xic/l2/kflt",
+                "valueString": "9692-3"
+            },
+            {
+                "url": "obgt://dq8.zxs/v5/kqrucw-yxdxz",
+                "valueString": "F"
+            }
+        ],
+        "gender": "tytpke",
+        "generalPractitioner": [
+            {
+                "reference": "#sbl2"
+            }
+        ],
+        "id": "3112q272-vgu2-1739-4424-j29mb72ni44t",
+        "identifier": [
+            {
+                "assigner": {
+                    "display": "WKBHNCS",
+                    "type": "Aywrjjdxdadr"
+                },
+                "system": "B",
+                "type": {
+                    "coding": [
+                        {
+                            "code": "YY",
+                            "display": "AO",
+                            "system": "deyv://qi7.ikb/f9/slitaunaum-wpnm-lmbr"
+                        }
+                    ],
+                    "text": "HA"
+                },
+                "use": "wtzco",
+                "value": "246332"
+            },
+            {
+                "system": "S",
+                "type": {
+                    "coding": [
+                        {
+                            "code": "YA",
+                            "display": "FG",
+                            "system": "gylz://bv4.lko/g5/dssxrlptrq-efxd-lyto"
+                        }
+                    ],
+                    "text": "BZ"
+                },
+                "use": "onvjqlaq",
+                "value": "317217"
+            },
+            {
+                "system": "I",
+                "type": {
+                    "coding": [
+                        {
+                            "code": "YL",
+                            "display": "KZ",
+                            "system": "fegn://kyzqpannjmq.ku5.cbl/DgrbVvsdwx/o4-6695"
+                        }
+                    ],
+                    "text": "NU"
+                },
+                "use": "sjwrebrh",
+                "value": "7843224179"
+            },
+            {
+                "system": "ddln://sr6.xqm/zdvw/xik/lz-zwh",
+                "type": {
+                    "coding": [
+                        {
+                            "code": "IL",
+                            "display": "BR",
+                            "system": "sbry://ybaqxepnjcm.rv3.vbq/WjtdVvyvhh/g3-3635"
+                        }
+                    ],
+                    "text": "OR"
+                },
+                "use": "dtdyoezm",
+                "value": "684-24-6956"
+            },
+            {
+                "type": {
+                    "coding": [
+                        {
+                            "code": "TU",
+                            "display": "MG",
+                            "system": "cvvr://cfxpfbpfjod.uo1.gnk/QqpwRxrnvl/o2-6517"
+                        }
+                    ],
+                    "text": "XQ"
+                },
+                "use": "laaxvpnc",
+                "value": "VG442954H"
+            }
+        ],
+        "meta": {
+            "lastUpdated": "6272-12-41K75:93:59.737+84:42"
+        },
+        "name": [
+            {
+                "family": "KINJGGV",
+                "given": [
+                    "UIYUJSFO",
+                    "M"
+                ],
+                "use": "jjkov"
+            }
+        ],
+        "resourceType": "Aeimqqx"
+    }
+}
