@@ -218,30 +218,32 @@ impl Schema {
     }
 
     /*
-    pub fn trav2(&mut self, parents: Vec<String>, val: Value) {
+    pub fn trav2(&mut self, gr_parent: Option<(usize, &str)>, parents: Vec<String>, val: Value, idx: usize) {
         match val {
             Value::Object(obj) => {
-                let mut row = BTreeMap::new();
-                for (key, value) in obj {
-                    match value {
-                        Value::Object(obj) => {
-                            let mut p = parents.clone();
-                            p.push(key.clone());
-                            row.insert(format!("{}_ID", parents.join("_")), Value::from(0));
-                            self.trav2(p, Value::from(obj));
-                        }
-                        Value::Array(arr) => {
-                        }
-                        other => {
-                            row.insert(parents.join("_"), Value::from(other));
-                        }
+                let fk = self.create_entry(gr_parent, &parents, &self.opts.clone());
+                let gr_parent_table = parents.join("_");
+                let gr_parent = Some((fk, &gr_parent_table));
+                for (key, val) in obj {
+                    match val {
                     }
                 }
-                println!("ROW: {:?}", &row);
             }
             Value::Array(arr) => {
             }
             other_value => {
+                let table_name = parents
+                    .clone()
+                    .into_iter()
+                    .take(parents.len() - 1)
+                    .collect::<Vec<String>>();
+                let key = &parents[parents.len() - 1];
+                let mut set_values = BTreeMap::new();
+                set_values.insert(key.to_owned(), other_value);
+                if let Some((fk, fk_table_name)) = gr_parent {
+                    set_values.insert(fk_table_name.to_owned(), Value::from(fk));
+                }
+                self.set_or_add_table_row(&table_name, idx, set_values);
             }
         }
     }
