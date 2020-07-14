@@ -154,6 +154,7 @@ impl Schema {
             opts,
         }
     }
+    /*
     pub fn create_entry(
         &mut self,
         parent_table: Option<(usize, &str)>,
@@ -171,7 +172,16 @@ impl Schema {
             panic!("Could not find table which is bizare");
         }
     }
+    */
 
+    pub fn create_table(&mut self, table_name: String) {
+        if !self.data.contains_key(&table_name) {
+            let t = Table::new(&table_name);
+            self.data.insert(table_name, t);
+        }
+    }
+
+    /*
     pub fn set_table_row(&mut self, tables: &[String], idx: usize, row: BTreeMap<String, Value>) {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
@@ -180,7 +190,18 @@ impl Schema {
             panic!("set_row could not find the table, by this point this should not happen");
         }
     }
+    */
 
+    pub fn get_num_table_rows(&mut self, tables: &[String]) -> usize {
+        let table_name = tables.join("_");
+        if let Some(t) = self.data.get_mut(&table_name) {
+            return t.rows.len()
+        } else {
+            panic!("set_row could not find the table, by this point this should not happen");
+        }
+    }
+
+    /*
     pub fn set_or_add_table_row(
         &mut self,
         tables: &[String],
@@ -198,7 +219,9 @@ impl Schema {
             panic!("set_row could not find the table, by this point this should not happen");
         }
     }
+    */
 
+    /*
     pub fn set_last_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
@@ -207,48 +230,79 @@ impl Schema {
             panic!("set_last_row could not find the table, by this point this should not happen");
         }
     }
+    */
 
     pub fn add_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
             t.add_row(row);
         } else {
-            panic!("set_row could not find the table, by this point this should not happen");
+            panic!(format!("set_row could not find the table ({:?})\n    {:?}", tables, &row));
+        }
+    }
+
+    fn as_fk(&self, s: &str) -> String {
+        return format!("{}{}", s, self.opts.column_id_postfix);
+    }
+
+    pub fn trav2(&mut self, parents: Vec<String>, val: Value) -> Option<(String, Value)> {
+        //println!("Processing: {:?} \n   {:?}", &parents, &val);
+        match val {
+            Value::Object(obj) => {
+                self.create_table(parents.join("_"));
+                let mut row_values = BTreeMap::new();
+                for (key, val) in obj {
+                    let mut p = parents.clone();
+                    p.push(key);
+                    if let Some((key, value)) = self.trav2(p, val) {
+                        row_values.insert(key, value);
+                    }
+                }
+                if row_values.len() > 0 {
+                    if parents.len() > 1 {
+                        let grand_parents = parents
+                            .clone()
+                            .into_iter()
+                            .take(parents.len() - 1)
+                            .collect::<Vec<String>>();
+                        let grand_parent_name = grand_parents.join("_");
+                        row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
+                    }
+                    self.add_table_row(&parents, row_values);
+                }
+                None
+            }
+            Value::Array(arr) => {
+                self.create_table(parents.join("_"));
+                let mut row_values = BTreeMap::new();
+                for val in arr {
+                    if let Some((key, value)) = self.trav2(parents.clone(), val) {
+                        row_values.insert(key, value);
+                    }
+                }
+                if row_values.len() > 0 {
+                    if parents.len() > 1 {
+                        let grand_parents = parents
+                            .clone()
+                            .into_iter()
+                            .take(parents.len() - 1)
+                            .collect::<Vec<String>>();
+                        let grand_parent_name = grand_parents.join("_");
+                        row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
+                    }
+                    self.add_table_row(&parents, row_values);
+                }
+                None
+            }
+            other_value => {
+                // ignore parents when its a non container
+                let key = &parents[parents.len() - 1];
+                Some((key.to_owned(), other_value))
+            }
         }
     }
 
     /*
-    pub fn trav2(&mut self, gr_parent: Option<(usize, &str)>, parents: Vec<String>, val: Value, idx: usize) {
-        match val {
-            Value::Object(obj) => {
-                let fk = self.create_entry(gr_parent, &parents, &self.opts.clone());
-                let gr_parent_table = parents.join("_");
-                let gr_parent = Some((fk, &gr_parent_table));
-                for (key, val) in obj {
-                    match val {
-                    }
-                }
-            }
-            Value::Array(arr) => {
-            }
-            other_value => {
-                let table_name = parents
-                    .clone()
-                    .into_iter()
-                    .take(parents.len() - 1)
-                    .collect::<Vec<String>>();
-                let key = &parents[parents.len() - 1];
-                let mut set_values = BTreeMap::new();
-                set_values.insert(key.to_owned(), other_value);
-                if let Some((fk, fk_table_name)) = gr_parent {
-                    set_values.insert(fk_table_name.to_owned(), Value::from(fk));
-                }
-                self.set_or_add_table_row(&table_name, idx, set_values);
-            }
-        }
-    }
-    */
-
     fn add_child_hint_column(
         &mut self,
         parents_info: &Option<(usize, &str)>,
@@ -276,7 +330,9 @@ impl Schema {
             self.set_or_add_table_row(&parent_full_path, *pk, vals);
         }
     }
+*/
 
+    /*
     pub fn trav(
         &mut self,
         depth: u16,
@@ -381,6 +437,7 @@ impl Schema {
             other => Some(other.to_owned()),
         }
     }
+    */
 
     pub fn export_csv(self) {
         for (_, table) in self.data {
@@ -395,7 +452,8 @@ impl Schema {
         for line in f.lines() {
             match serde_json::from_str(&line?) {
                 Ok::<Value, _>(val) => {
-                    self.trav(0, None, vec![String::from(&self.opts.root_table_name)], val);
+                    //self.trav(0, None, vec![String::from(&self.opts.root_table_name)], val);
+                    self.trav2(vec![String::from(&self.opts.root_table_name)], val);
                 }
                 Err(e) => {
                     println!("JsonError: {:?}", e);
