@@ -22,19 +22,62 @@ pub struct Opts {
     */
 }
 
+fn count_lines_in_file(fname: &str) -> std::result::Result<usize, Box<dyn std::error::Error>> {
+    use std::io::prelude::*;
+    use std::path::Path;
+    let path = Path::new(fname);
+    let display = path.display();
+    let file = match File::open(&path) {
+        Err(_why) => {
+            println!("INFO: Did not see file {}, will create one", display);
+            return Ok(0);
+        },
+        Ok(file) => file,
+    };
+    let f = BufReader::new(file);
+
+    let mut num: usize = 0;
+    for line in f.lines() {
+        match &line {
+            Ok(_) => {
+                num += 1;
+            }
+            Err(_) => {
+                return Ok(num);
+            }
+        }
+    }
+    //println!("{:} has {:} lines", &display, num);
+    return Ok(num);
+}
+
 #[derive(Debug)]
 pub struct Table {
     pub name: String,
     pub columns: BTreeMap<String, u16>,
     pub rows: BTreeMap<usize, BTreeMap<String, Value>>,
+    pub row_offset: usize,
 }
 
 impl Table {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, opts: &Opts) -> Self {
+        let fname = format!("{}/{}.csv", &opts.out_folder, name);
+        let row_offset = match count_lines_in_file(&fname) {
+            Ok(mut num) => {
+                if num > 0 {
+                    num -= 1;
+                }
+                num
+            },
+            Err(er) => {
+                panic!("Ran into a fatal error while looking for file {:?}", er);
+            }
+        };
         Table {
             name: name.to_owned(),
             columns: BTreeMap::new(),
             rows: BTreeMap::new(),
+            row_offset,
         }
     }
 
@@ -42,7 +85,7 @@ impl Table {
         for (key, _) in &row {
             self.columns.entry(key.to_owned()).or_insert(0);
         }
-        self.rows.insert(self.rows.len(), row);
+        self.rows.insert(self.rows.len() + self.row_offset + 1, row);
     }
 
     pub fn export_csv(self, opts: &Opts) {
@@ -52,21 +95,40 @@ impl Table {
         let path = Path::new(&fname);
         let display = path.display();
 
+        /*
         let mut file = match File::create(&path) {
             Err(why) => panic!("couldn't create {}: {}", display, why),
             Ok(file) => file,
         };
+        */
 
-        // Write the `LOREM_IPSUM` string to `file`, returns `io::Result<()>`
-        let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
-        for (key, _val) in &self.columns {
-            columns_str.push_str(",");
-            columns_str.push_str(&key);
-        }
-        columns_str.push_str("\n");
-        match file.write_all(columns_str.as_bytes()) {
-            Err(why) => panic!("couldn't write to {}: {}", display, why),
-            Ok(_) => (),
+        use std::fs::OpenOptions;
+        //let mut file = match File::open(&path) {
+        let mut file = match OpenOptions::new().write(true).append(true).open(&path) {
+            Err(why) => {
+                println!("Creating file {}: because {}", display, why);
+                match File::create(&path) {
+                    Err(why) => panic!("couldn't create {}: {}", display, why),
+                    Ok(file) => file,
+                }
+            }
+            Ok(file) => file,
+        };
+
+        let total_lines = count_lines_in_file(&fname).expect("Could not count lines");
+
+        // only add columns if needed
+        if total_lines == 0 {
+            let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
+            for (key, _val) in &self.columns {
+                columns_str.push_str(",");
+                columns_str.push_str(&key);
+            }
+            columns_str.push_str("\n");
+            match file.write_all(columns_str.as_bytes()) {
+                Err(why) => panic!("couldn't write to {}: {}", display, why),
+                Ok(_) => (),
+            }
         }
 
         for (idx, row) in self.rows {
@@ -124,7 +186,7 @@ impl Schema {
 
     pub fn create_table(&mut self, table_name: String) {
         if !self.data.contains_key(&table_name) {
-            let t = Table::new(&table_name);
+            let t = Table::new(&table_name, &self.opts);
             self.data.insert(table_name, t);
         }
     }
@@ -132,7 +194,7 @@ impl Schema {
     pub fn get_num_table_rows(&mut self, tables: &[String]) -> usize {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
-            return t.rows.len()
+            return t.rows.len() + t.row_offset
         } else {
             panic!("set_row could not find the table, by this point this should not happen");
         }
