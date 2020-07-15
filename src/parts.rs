@@ -164,7 +164,7 @@ impl Schema {
                         row_values.insert(key, value);
                     }
                 }
-                if row_values.len() > 0 {
+                //if row_values.len() > 0 {
                     if parents.len() > 1 {
                         let grand_parents = parents
                             .clone()
@@ -175,7 +175,7 @@ impl Schema {
                         row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
                     }
                     //self.add_table_row(&parents, row_values);
-                }
+                //}
                     self.add_table_row(&parents, row_values);
                 None
             }
