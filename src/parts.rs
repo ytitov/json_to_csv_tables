@@ -174,8 +174,9 @@ impl Schema {
                         let grand_parent_name = grand_parents.join("_");
                         row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
                     }
-                    self.add_table_row(&parents, row_values);
+                    //self.add_table_row(&parents, row_values);
                 }
+                    self.add_table_row(&parents, row_values);
                 None
             }
             Value::Array(arr) => {
