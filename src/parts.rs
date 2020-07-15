@@ -180,23 +180,23 @@ impl Schema {
             }
             Value::Array(arr) => {
                 self.create_table(parents.join("_"));
-                let mut row_values = BTreeMap::new();
                 for val in arr {
+                    let mut row_values = BTreeMap::new();
                     if let Some((key, value)) = self.trav2(parents.clone(), val) {
                         row_values.insert(key, value);
                     }
-                }
-                if row_values.len() > 0 {
-                    if parents.len() > 1 {
-                        let grand_parents = parents
-                            .clone()
-                            .into_iter()
-                            .take(parents.len() - 1)
-                            .collect::<Vec<String>>();
-                        let grand_parent_name = grand_parents.join("_");
-                        row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
+                    if row_values.len() > 0 {
+                        if parents.len() > 1 {
+                            let grand_parents = parents
+                                .clone()
+                                .into_iter()
+                                .take(parents.len() - 1)
+                                .collect::<Vec<String>>();
+                            let grand_parent_name = grand_parents.join("_");
+                            row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
+                        }
+                        self.add_table_row(&parents, row_values);
                     }
-                    self.add_table_row(&parents, row_values);
                 }
                 None
             }
