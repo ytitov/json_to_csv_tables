@@ -83,13 +83,14 @@ pub struct Table {
     pub row_offset: usize,
     /// are we appending to an existing CSV file and columns should be prespecified
     pub appending_mode: bool,
+    pub opts: Opts,
 }
 
 impl Table {
     pub fn new(name: &str, opts: &Opts) -> Self {
         let fname = format!("{}/{}.csv", &opts.out_folder, name);
         let mut appending_mode = false;
-        let columns;
+        let mut columns;
         let row_offset = match get_csv_file_info(&fname) {
             Ok(csv_info) => {
                 let mut num = csv_info.lines_in_file;
@@ -110,6 +111,7 @@ impl Table {
             rows: BTreeMap::new(),
             row_offset,
             appending_mode,
+            opts: opts.clone(),
         }
     }
 
@@ -154,10 +156,15 @@ impl Table {
             rows,
             row_offset: 0,
             appending_mode: false,
+            opts: opts.clone(),
         })
     }
 
-    pub fn add_row(&mut self, row: BTreeMap<String, Value>) {
+    pub fn get_pk_name(&self) -> String {
+        return format!("{}{}", self.name, &self.opts.column_id_postfix);
+    }
+
+    pub fn add_row(&mut self, mut row: BTreeMap<String, Value>) {
         for (key, _) in &row {
             if self.appending_mode == true && !self.columns.contains_key(key) {
                 panic!("You are appending to {}, which does not have the required column {:?}", &self.name, key);
@@ -165,15 +172,21 @@ impl Table {
             let num_cols = self.columns.len() as u16;
             self.columns.entry(key.to_owned()).or_insert(num_cols);
         }
-        self.rows.insert(self.rows.len() + self.row_offset, row);
+        let pk_idx = self.rows.len() + self.row_offset;
+        row.entry(self.get_pk_name()).or_insert(Value::from(pk_idx));
+        self.rows.insert(pk_idx, row);
     }
 
-    pub fn export_csv(self, opts: &Opts) {
+    pub fn export_csv(mut self, opts: &Opts) {
         use std::io::prelude::*;
         use std::path::Path;
         let fname = format!("{}/{}.csv", &opts.out_folder, &self.name);
         let path = Path::new(&fname);
         let display = path.display();
+
+        let col_idx = self.columns.len();
+        self.columns.entry(self.get_pk_name()).or_insert(col_idx as u16);
+        println!("export_csv columns: {:?}", &self.columns);
 
         /*
         let mut file = match File::create(&path) {
@@ -199,11 +212,12 @@ impl Table {
 
         // only add columns if needed
         if total_lines == 0 {
-            let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
+            //let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
+            let mut columns_vec = Vec::new();
             for (key, _val) in &self.columns {
-                columns_str.push_str(",");
-                columns_str.push_str(&key);
+                columns_vec.push(String::from(key));
             }
+            let mut columns_str = columns_vec.join(",");
             columns_str.push_str("\n");
             match file.write_all(columns_str.as_bytes()) {
                 Err(why) => panic!("couldn't write to {}: {}", display, why),
@@ -212,14 +226,15 @@ impl Table {
         }
 
         for (idx, row) in self.rows {
-            let mut line = format!("{}", idx);
+            let mut row_vec = Vec::new();
             for (col, _) in &self.columns {
                 if let Some(val) = row.get(col) {
-                    line.push_str(&format!(",{}", val));
+                    row_vec.push(format!("{}", val));
                 } else {
-                    line.push_str(",");
+                    row_vec.push(format!(""));
                 }
             }
+            let mut line = row_vec.join(",");
             line.push_str("\n");
             match file.write_all(line.as_bytes()) {
                 Err(why) => panic!("couldn't write to {}: {}", display, why),

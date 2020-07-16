@@ -14,7 +14,7 @@ fn main() {
                 if table.columns.len() == 0 {
                     panic!("Ended up with zero columns, this is not good");
                 }
-                let col_idx = table.columns.len() - 1;
+                let col_idx = table.columns.len();
                 table.columns.entry(add_column_name.to_owned()).or_insert(col_idx as u16);
                 table.export_csv(&opts);
             }
