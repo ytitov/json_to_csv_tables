@@ -136,7 +136,7 @@ impl Table {
         //let mut file = match File::open(&path) {
         let mut file = match OpenOptions::new().write(true).append(true).open(&path) {
             Err(why) => {
-                println!("Creating file {}: because {}", display, why);
+                println!("Creating file {}\n   Reason: {}", display, why);
                 match File::create(&path) {
                     Err(why) => panic!("couldn't create {}: {}", display, why),
                     Ok(file) => file,
