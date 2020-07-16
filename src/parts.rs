@@ -20,6 +20,8 @@ pub struct Opts {
     #[clap(long, about = "This will indicate if the object represented by this table contains a value represented by the property named: CONTAINS_<what table it is in> The property name will be the last item delimited by _")]
     pub child_prop_hint_columns: bool,
     */
+    #[clap(long, about = "Add a column to the table inside the given csv file")]
+    pub add_column_name: Option<String>,
 }
 
 struct CsvFileInfo {
@@ -27,7 +29,7 @@ struct CsvFileInfo {
     pub lines_in_file: usize,
 }
 
-fn count_lines_in_file(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn std::error::Error>> {
+fn get_csv_file_info(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn std::error::Error>> {
     use std::io::prelude::*;
     use std::path::Path;
     let path = Path::new(fname);
@@ -52,8 +54,10 @@ fn count_lines_in_file(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn 
                 if num == 0 {
                     let first_line = String::from(line);
                     let cols: Vec<&str> = first_line.trim().split(",").collect();
+                    let mut idx = 0;
                     for col in cols {
-                        columns.entry(col.to_owned()).or_insert(0);
+                        columns.entry(col.to_owned()).or_insert(idx);
+                        idx += 1;
                     }
 
                 }
@@ -85,7 +89,7 @@ impl Table {
         let fname = format!("{}/{}.csv", &opts.out_folder, name);
         let mut appending_mode = false;
         let columns;
-        let row_offset = match count_lines_in_file(&fname) {
+        let row_offset = match get_csv_file_info(&fname) {
             Ok(csv_info) => {
                 let mut num = csv_info.lines_in_file;
                 columns = csv_info.columns;
@@ -108,12 +112,56 @@ impl Table {
         }
     }
 
+    pub fn load(opts: &Opts) -> Result<Self, Box<dyn std::error::Error>> {
+        let file_info = get_csv_file_info(&opts.in_file)?;
+        let f = File::open(&opts.in_file)?;
+        let f = BufReader::new(f);
+        let columns = file_info.columns;
+        let mut rows = BTreeMap::new();
+        let mut idx_to_name: HashMap<u16, String> = HashMap::new();
+        for (col_name, col_idx) in &columns {
+            idx_to_name.insert(*col_idx, col_name.to_owned());
+        }
+        let mut idx = 0;
+        for line in f.lines() {
+            match &line {
+                Ok(line) => {
+                    //self.trav(0, None, vec![String::from(&self.opts.root_table_name)], val);
+                    if idx > 0 {
+                        let cur_line = String::from(line);
+                        let col_vals: Vec<&str> = cur_line.trim().split(",").collect();
+                        let mut row: BTreeMap<String, Value> = BTreeMap::new();
+                        for (idx, value) in col_vals.into_iter().enumerate() {
+                            let col_name = idx_to_name.get(&(idx as u16)).expect("Fatal: ran into a non-existing column while scanning the file");
+                            if let Ok(value) = serde_json::from_str(value) {
+                                row.insert(col_name.to_owned(), value);
+                            }
+                        }
+                        rows.insert(rows.len(),row);
+                    }
+                    idx += 1;
+                }
+                Err(e) => {
+                    println!("Reached end of line: {}", e);
+                }
+            }
+        }
+        Ok( Table {
+            name: opts.root_table_name.clone(),
+            columns,
+            rows,
+            row_offset: 0,
+            appending_mode: false,
+        })
+    }
+
     pub fn add_row(&mut self, row: BTreeMap<String, Value>) {
         for (key, _) in &row {
             if self.appending_mode == true && !self.columns.contains_key(key) {
                 panic!("You are appending to {}, which does not have the required column {:?}", &self.name, key);
             }
-            self.columns.entry(key.to_owned()).or_insert(0);
+            let num_cols = self.columns.len() as u16;
+            self.columns.entry(key.to_owned()).or_insert(num_cols);
         }
         self.rows.insert(self.rows.len() + self.row_offset + 1, row);
     }
@@ -145,7 +193,7 @@ impl Table {
             Ok(file) => file,
         };
 
-        let total_lines = count_lines_in_file(&fname).expect("Could not count lines").lines_in_file;
+        let total_lines = get_csv_file_info(&fname).expect("Could not count lines").lines_in_file;
 
         // only add columns if needed
         if total_lines == 0 {
