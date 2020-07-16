@@ -132,7 +132,8 @@ impl Table {
                         let col_vals: Vec<&str> = cur_line.trim().split(",").collect();
                         let mut row: BTreeMap<String, Value> = BTreeMap::new();
                         for (idx, value) in col_vals.into_iter().enumerate() {
-                            let col_name = idx_to_name.get(&(idx as u16)).expect("Fatal: ran into a non-existing column while scanning the file");
+                            let col_name = idx_to_name.get(&(idx as u16))
+                                .expect(format!("Fatal: ran into a non-existing column while scanning the file: {} - {:?}", idx, value));
                             if let Ok(value) = serde_json::from_str(value) {
                                 row.insert(col_name.to_owned(), value);
                             }
