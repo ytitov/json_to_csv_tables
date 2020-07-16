@@ -22,33 +22,52 @@ pub struct Opts {
     */
 }
 
-fn count_lines_in_file(fname: &str) -> std::result::Result<usize, Box<dyn std::error::Error>> {
+struct CsvFileInfo {
+    pub columns: BTreeMap<String, u16>,
+    pub lines_in_file: usize,
+}
+
+fn count_lines_in_file(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn std::error::Error>> {
     use std::io::prelude::*;
     use std::path::Path;
     let path = Path::new(fname);
     let display = path.display();
+    let mut columns: BTreeMap<String, u16> = BTreeMap::new();
     let file = match File::open(&path) {
         Err(_why) => {
             println!("INFO: Did not see file {}, will create one", display);
-            return Ok(0);
+            return Ok(CsvFileInfo{
+                    columns, lines_in_file: 0
+                });
         },
         Ok(file) => file,
     };
     let f = BufReader::new(file);
 
+
     let mut num: usize = 0;
     for line in f.lines() {
         match &line {
-            Ok(_) => {
+            Ok(line) => {
+                if num == 0 {
+                    let first_line = String::from(line);
+                    let cols: Vec<&str> = first_line.trim().split(",").collect();
+                    for col in cols {
+                        columns.entry(col.to_owned()).or_insert(0);
+                    }
+
+                }
                 num += 1;
             }
             Err(_) => {
-                return Ok(num);
+                return Ok(CsvFileInfo{
+                    columns, lines_in_file: num
+                });
             }
         }
     }
     //println!("{:} has {:} lines", &display, num);
-    return Ok(num);
+    return Ok(CsvFileInfo { columns, lines_in_file: num });
 }
 
 #[derive(Debug)]
@@ -57,15 +76,22 @@ pub struct Table {
     pub columns: BTreeMap<String, u16>,
     pub rows: BTreeMap<usize, BTreeMap<String, Value>>,
     pub row_offset: usize,
+    /// are we appending to an existing CSV file and columns should be prespecified
+    pub appending_mode: bool,
 }
 
 impl Table {
     pub fn new(name: &str, opts: &Opts) -> Self {
         let fname = format!("{}/{}.csv", &opts.out_folder, name);
+        let mut appending_mode = false;
+        let columns;
         let row_offset = match count_lines_in_file(&fname) {
-            Ok(mut num) => {
+            Ok(csv_info) => {
+                let mut num = csv_info.lines_in_file;
+                columns = csv_info.columns;
                 if num > 0 {
                     num -= 1;
+                    appending_mode = true;
                 }
                 num
             },
@@ -75,14 +101,18 @@ impl Table {
         };
         Table {
             name: name.to_owned(),
-            columns: BTreeMap::new(),
+            columns,
             rows: BTreeMap::new(),
             row_offset,
+            appending_mode,
         }
     }
 
     pub fn add_row(&mut self, row: BTreeMap<String, Value>) {
         for (key, _) in &row {
+            if self.appending_mode == true && !self.columns.contains_key(key) {
+                panic!("You are appending to {}, which does not have the required column {:?}", &self.name, key);
+            }
             self.columns.entry(key.to_owned()).or_insert(0);
         }
         self.rows.insert(self.rows.len() + self.row_offset + 1, row);
@@ -115,7 +145,7 @@ impl Table {
             Ok(file) => file,
         };
 
-        let total_lines = count_lines_in_file(&fname).expect("Could not count lines");
+        let total_lines = count_lines_in_file(&fname).expect("Could not count lines").lines_in_file;
 
         // only add columns if needed
         if total_lines == 0 {
@@ -289,7 +319,7 @@ impl Schema {
                     self.trav2(vec![String::from(&self.opts.root_table_name)], val);
                 }
                 Err(e) => {
-                    println!("JsonError: {:?}", e);
+                    println!("WARNING: {}, skipping this json string.", e);
                 }
             }
         }
