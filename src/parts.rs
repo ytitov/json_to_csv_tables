@@ -70,6 +70,7 @@ fn get_csv_file_info(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn st
             }
         }
     }
+    println!("Columns in file: {:?}", &columns);
     //println!("{:} has {:} lines", &display, num);
     return Ok(CsvFileInfo { columns, lines_in_file: num });
 }
@@ -164,7 +165,7 @@ impl Table {
             let num_cols = self.columns.len() as u16;
             self.columns.entry(key.to_owned()).or_insert(num_cols);
         }
-        self.rows.insert(self.rows.len() + self.row_offset + 1, row);
+        self.rows.insert(self.rows.len() + self.row_offset, row);
     }
 
     pub fn export_csv(self, opts: &Opts) {
