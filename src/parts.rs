@@ -5,7 +5,9 @@ use std::fmt;
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::io::{BufReader};
+use std::io::BufReader;
+
+pub mod err;
 
 #[derive(Clap, Debug, Clone)]
 #[clap(version = "1.0", author = "Yuri Titov <ytitov@gmail.com>")]
@@ -29,23 +31,23 @@ struct CsvFileInfo {
     pub lines_in_file: usize,
 }
 
-fn get_csv_file_info(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn std::error::Error>> {
+fn get_csv_file_info(fname: &str) -> CsvFileInfo {
     use std::io::prelude::*;
     use std::path::Path;
     let path = Path::new(fname);
-    let display = path.display();
+    //let display = path.display();
     let mut columns: BTreeMap<String, u16> = BTreeMap::new();
     let file = match File::open(&path) {
         Err(_why) => {
-            println!("INFO: Did not see file {}, will create one", display);
-            return Ok(CsvFileInfo{
-                    columns, lines_in_file: 0
-                });
-        },
+            //println!("INFO: Did not see file {}, will create one", display);
+            return CsvFileInfo {
+                columns,
+                lines_in_file: 0,
+            };
+        }
         Ok(file) => file,
     };
     let f = BufReader::new(file);
-
 
     let mut num: usize = 0;
     for line in f.lines() {
@@ -59,20 +61,21 @@ fn get_csv_file_info(fname: &str) -> std::result::Result<CsvFileInfo, Box<dyn st
                         columns.entry(col.to_owned()).or_insert(idx);
                         idx += 1;
                     }
-
                 }
                 num += 1;
             }
             Err(_) => {
-                return Ok(CsvFileInfo{
-                    columns, lines_in_file: num
-                });
+                return CsvFileInfo {
+                    columns,
+                    lines_in_file: num,
+                };
             }
         }
     }
-    println!("Columns in file: {:?}", &columns);
-    //println!("{:} has {:} lines", &display, num);
-    return Ok(CsvFileInfo { columns, lines_in_file: num });
+    return CsvFileInfo {
+        columns,
+        lines_in_file: num,
+    };
 }
 
 #[derive(Debug)]
@@ -90,21 +93,16 @@ impl Table {
     pub fn new(name: &str, opts: &Opts) -> Self {
         let fname = format!("{}/{}.csv", &opts.out_folder, name);
         let mut appending_mode = false;
-        let mut columns;
-        let row_offset = match get_csv_file_info(&fname) {
-            Ok(csv_info) => {
-                let mut num = csv_info.lines_in_file;
-                columns = csv_info.columns;
-                if num > 0 {
-                    num -= 1;
-                    appending_mode = true;
-                }
-                num
-            },
-            Err(er) => {
-                panic!("Ran into a fatal error while looking for file {:?}", er);
-            }
-        };
+        let columns;
+        let row_offset;
+        let csv_info = get_csv_file_info(&fname);
+        let mut num = csv_info.lines_in_file;
+        columns = csv_info.columns;
+        if num > 0 {
+            num -= 1;
+            appending_mode = true;
+        }
+        row_offset = num;
         Table {
             name: name.to_owned(),
             columns,
@@ -116,7 +114,7 @@ impl Table {
     }
 
     pub fn load(opts: &Opts) -> Result<Self, Box<dyn std::error::Error>> {
-        let file_info = get_csv_file_info(&opts.in_file)?;
+        let file_info = get_csv_file_info(&opts.in_file);
         let f = File::open(&opts.in_file)?;
         let f = BufReader::new(f);
         let columns = file_info.columns;
@@ -135,13 +133,17 @@ impl Table {
                         let col_vals: Vec<&str> = cur_line.trim().split(",").collect();
                         let mut row: BTreeMap<String, Value> = BTreeMap::new();
                         for (idx, value) in col_vals.into_iter().enumerate() {
-                            let col_name = idx_to_name.get(&(idx as u16))
-                                .expect(&format!("Fatal: ran into a non-existing column while scanning the file: {} - {:?}", idx, value));
+                            let col_name = idx_to_name.get(&(idx as u16)).unwrap_or(Err(
+                                err::CsvError::MissingColumn(format!(
+                                    "File has more columns in data than in header, index: {}",
+                                    idx
+                                )),
+                            )?);
                             if let Ok(value) = serde_json::from_str(value) {
                                 row.insert(col_name.to_owned(), value);
                             }
                         }
-                        rows.insert(rows.len(),row);
+                        rows.insert(rows.len(), row);
                     }
                     idx += 1;
                 }
@@ -150,7 +152,7 @@ impl Table {
                 }
             }
         }
-        Ok( Table {
+        Ok(Table {
             name: opts.root_table_name.clone(),
             columns,
             rows,
@@ -164,10 +166,10 @@ impl Table {
         return format!("{}{}", self.name, &self.opts.column_id_postfix);
     }
 
-    pub fn add_row(&mut self, mut row: BTreeMap<String, Value>) {
+    pub fn add_row(&mut self, mut row: BTreeMap<String, Value>) -> Result<(), err::CsvError> {
         for (key, _) in &row {
             if self.appending_mode == true && !self.columns.contains_key(key) {
-                panic!("You are appending to {}, which does not have the required column {:?}", &self.name, key);
+                return Err(err::CsvError::MissingColumn(key.to_owned()));
             }
             let num_cols = self.columns.len() as u16;
             self.columns.entry(key.to_owned()).or_insert(num_cols);
@@ -175,9 +177,10 @@ impl Table {
         let pk_idx = self.rows.len() + self.row_offset;
         row.entry(self.get_pk_name()).or_insert(Value::from(pk_idx));
         self.rows.insert(pk_idx, row);
+        Ok(())
     }
 
-    pub fn export_csv(mut self, opts: &Opts) {
+    pub fn export_csv(mut self, opts: &Opts) -> Result<(), err::CsvError> {
         use std::io::prelude::*;
         use std::path::Path;
         let fname = format!("{}/{}.csv", &opts.out_folder, &self.name);
@@ -185,34 +188,33 @@ impl Table {
         let display = path.display();
 
         let col_idx = self.columns.len();
-        self.columns.entry(self.get_pk_name()).or_insert(col_idx as u16);
+        self.columns
+            .entry(self.get_pk_name())
+            .or_insert(col_idx as u16);
         println!("export_csv columns: {:?}", &self.columns);
-
-        /*
-        let mut file = match File::create(&path) {
-            Err(why) => panic!("couldn't create {}: {}", display, why),
-            Ok(file) => file,
-        };
-        */
 
         use std::fs::OpenOptions;
         //let mut file = match File::open(&path) {
         let mut file = match OpenOptions::new().write(true).append(true).open(&path) {
-            Err(why) => {
-                println!("Creating file {}\n   Reason: {}", display, why);
+            Err(_) => {
+                //println!("Creating file {}\n   Reason: {}", display, why);
                 match File::create(&path) {
-                    Err(why) => panic!("couldn't create {}: {}", display, why),
+                    Err(why) => {
+                        return Err(err::CsvError::CouldNotCreate(format!(
+                            "{}, because {}",
+                            display, why
+                        )))
+                    }
                     Ok(file) => file,
                 }
             }
             Ok(file) => file,
         };
 
-        let total_lines = get_csv_file_info(&fname).expect("Could not count lines").lines_in_file;
+        let total_lines = get_csv_file_info(&fname).lines_in_file;
 
         // only add columns if needed
         if total_lines == 0 {
-            //let mut columns_str = format!("{}{}", self.name, &opts.column_id_postfix);
             let mut columns_vec = Vec::new();
             for (key, _val) in &self.columns {
                 columns_vec.push(String::from(key));
@@ -220,12 +222,17 @@ impl Table {
             let mut columns_str = columns_vec.join(",");
             columns_str.push_str("\n");
             match file.write_all(columns_str.as_bytes()) {
-                Err(why) => panic!("couldn't write to {}: {}", display, why),
+                Err(why) => {
+                    return Err(err::CsvError::CouldNotWrite(format!(
+                        "{}, because {}",
+                        display, why
+                    )))
+                }
                 Ok(_) => (),
             }
         }
 
-        for (idx, row) in self.rows {
+        for (_, row) in self.rows {
             let mut row_vec = Vec::new();
             for (col, _) in &self.columns {
                 if let Some(val) = row.get(col) {
@@ -237,11 +244,17 @@ impl Table {
             let mut line = row_vec.join(",");
             line.push_str("\n");
             match file.write_all(line.as_bytes()) {
-                Err(why) => panic!("couldn't write to {}: {}", display, why),
+                Err(why) => {
+                    return Err(err::CsvError::CouldNotWrite(format!(
+                        "{}, because {}",
+                        display, why
+                    )))
+                }
                 Ok(_) => (),
             }
         }
         println!("successfully wrote to {}", display);
+        Ok(())
     }
 }
 
@@ -289,18 +302,26 @@ impl Schema {
     pub fn get_num_table_rows(&mut self, tables: &[String]) -> usize {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
-            return t.rows.len() + t.row_offset
+            return t.rows.len() + t.row_offset;
         } else {
             panic!("set_row could not find the table, by this point this should not happen");
         }
     }
 
-    pub fn add_table_row(&mut self, tables: &[String], row: BTreeMap<String, Value>) {
+    pub fn add_table_row(
+        &mut self,
+        tables: &[String],
+        row: BTreeMap<String, Value>,
+    ) -> Result<(), err::CsvError> {
         let table_name = tables.join("_");
         if let Some(t) = self.data.get_mut(&table_name) {
-            t.add_row(row);
+            t.add_row(row)?;
+            Ok(())
         } else {
-            panic!(format!("set_row could not find the table ({:?})\n    {:?}", tables, &row));
+            panic!(format!(
+                "set_row could not find the table ({:?})\n    {:?}",
+                tables, &row
+            ));
         }
     }
 
@@ -308,8 +329,11 @@ impl Schema {
         return format!("{}{}", s, self.opts.column_id_postfix);
     }
 
-    pub fn trav2(&mut self, parents: Vec<String>, val: Value) -> Option<(String, Value)> {
-        //println!("Processing: {:?} \n   {:?}", &parents, &val);
+    pub fn walk_props(
+        &mut self,
+        parents: Vec<String>,
+        val: Value,
+    ) -> Result<Option<(String, Value)>, err::CsvError> {
         match val {
             Value::Object(obj) => {
                 self.create_table(parents.join("_"));
@@ -317,30 +341,31 @@ impl Schema {
                 for (key, val) in obj {
                     let mut p = parents.clone();
                     p.push(key);
-                    if let Some((key, value)) = self.trav2(p, val) {
+                    if let Some((key, value)) = self.walk_props(p, val)? {
                         row_values.insert(key, value);
                     }
                 }
                 //if row_values.len() > 0 {
-                    if parents.len() > 1 {
-                        let grand_parents = parents
-                            .clone()
-                            .into_iter()
-                            .take(parents.len() - 1)
-                            .collect::<Vec<String>>();
-                        let grand_parent_name = grand_parents.join("_");
-                        row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
-                    }
-                    //self.add_table_row(&parents, row_values);
-                //}
-                    self.add_table_row(&parents, row_values);
-                None
+                if parents.len() > 1 {
+                    let grand_parents = parents
+                        .clone()
+                        .into_iter()
+                        .take(parents.len() - 1)
+                        .collect::<Vec<String>>();
+                    let grand_parent_name = grand_parents.join("_");
+                    row_values.insert(
+                        self.as_fk(&grand_parent_name),
+                        Value::from(self.get_num_table_rows(&grand_parents)),
+                    );
+                }
+                self.add_table_row(&parents, row_values)?;
+                Ok(None)
             }
             Value::Array(arr) => {
                 self.create_table(parents.join("_"));
                 for val in arr {
                     let mut row_values = BTreeMap::new();
-                    if let Some((key, value)) = self.trav2(parents.clone(), val) {
+                    if let Some((key, value)) = self.walk_props(parents.clone(), val)? {
                         row_values.insert(key, value);
                     }
                     if row_values.len() > 0 {
@@ -351,26 +376,29 @@ impl Schema {
                                 .take(parents.len() - 1)
                                 .collect::<Vec<String>>();
                             let grand_parent_name = grand_parents.join("_");
-                            row_values.insert(self.as_fk(&grand_parent_name), Value::from(self.get_num_table_rows(&grand_parents)));
+                            row_values.insert(
+                                self.as_fk(&grand_parent_name),
+                                Value::from(self.get_num_table_rows(&grand_parents)),
+                            );
                         }
-                        self.add_table_row(&parents, row_values);
+                        self.add_table_row(&parents, row_values)?;
                     }
                 }
-                None
+                Ok(None)
             }
             other_value => {
                 // ignore parents when its a non container
                 let key = &parents[parents.len() - 1];
-                Some((key.to_owned(), other_value))
+                Ok(Some((key.to_owned(), other_value)))
             }
         }
     }
 
-
-    pub fn export_csv(self) {
+    pub fn export_csv(self) -> Result<(), err::CsvError> {
         for (_, table) in self.data {
-            table.export_csv(&self.opts);
+            table.export_csv(&self.opts)?;
         }
+        Ok(())
     }
 
     pub fn process_file(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -381,7 +409,7 @@ impl Schema {
             match serde_json::from_str(&line?) {
                 Ok::<Value, _>(val) => {
                     //self.trav(0, None, vec![String::from(&self.opts.root_table_name)], val);
-                    self.trav2(vec![String::from(&self.opts.root_table_name)], val);
+                    self.walk_props(vec![String::from(&self.opts.root_table_name)], val)?;
                 }
                 Err(e) => {
                     println!("WARNING: {}, skipping this json string.", e);
@@ -389,7 +417,7 @@ impl Schema {
             }
         }
 
-        self.export_csv();
+        self.export_csv()?;
 
         Ok(())
     }
