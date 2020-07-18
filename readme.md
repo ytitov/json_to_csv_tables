@@ -5,5 +5,4 @@ To run it:
 `cargo watch -x 'run -- test.json test' -w ./src`
 
 current issues:
-- [fixed][needs test] list of objects is giving wrong FK name, its one table too deep, works with plain non container values
-- an array of polymorphic types might be handled in a weird way so, needs to be tested
+- when using the buffering feature, columns which did not get imported on the first `--json-buf-size` writes will get silently dropped if they appear after that initial buffer slice
