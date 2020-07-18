@@ -99,7 +99,7 @@ impl Table {
         }
         let pk_idx = self.rows.len() + self.row_offset;
         row.entry(self.get_pk_name()).or_insert(Value::from(pk_idx));
-        println!("--> add_row {} - {:?}", pk_idx, &row);
+        //println!("--> add_row {} - {:?}", pk_idx, &row);
         self.rows.insert(pk_idx, row);
         Ok(())
     }
@@ -202,7 +202,8 @@ impl Table {
         }
 
         self.row_offset += num_rows_added;
-        println!("    row offset: {} - {:?}", &self.name, self.row_offset);
+        //println!("    row offset: {} - {:?}", &self.name, self.row_offset);
+        println!("[{}] - flushed {} lines.  Total: {}", self.name, num_rows_added, self.row_offset);
         self.rows = BTreeMap::new();
 
         Ok(())
