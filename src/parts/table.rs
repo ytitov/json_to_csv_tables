@@ -21,6 +21,7 @@ impl Table {
         let row_offset;
         let csv_info = get_csv_file_info(&fname);
         let mut num = csv_info.lines_in_file;
+        let mut column_types = BTreeMap::new();
         columns = csv_info.columns;
         if num > 0 {
             num -= 1;
@@ -28,10 +29,11 @@ impl Table {
         }
         row_offset = num;
         columns.insert(format!("{}{}", name, &opts.column_id_postfix), 0);
+        column_types.insert(format!("{}{}", name, &opts.column_id_postfix), Value::from(1));
         Table {
             name: name.to_owned(),
             columns,
-            column_types: BTreeMap::new(),
+            column_types,
             rows: BTreeMap::new(),
             col_str_max_lenghts: BTreeMap::new(),
             row_offset,
@@ -47,6 +49,7 @@ impl Table {
         let columns = file_info.columns;
         let mut rows = BTreeMap::new();
         let mut column_types: BTreeMap<String, Value> = BTreeMap::new();
+        column_types.insert(format!("{}{}", opts.root_table_name, &opts.column_id_postfix), Value::from(1));
         let mut idx_to_name: HashMap<u16, String> = HashMap::new();
         for (col_name, col_idx) in &columns {
             idx_to_name.insert(*col_idx, col_name.to_owned());
