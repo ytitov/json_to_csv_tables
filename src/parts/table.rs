@@ -4,6 +4,7 @@ use super::*;
 pub struct Table {
     pub name: String,
     pub columns: BTreeMap<String, u16>,
+    pub column_types: BTreeMap<String, Value>,
     pub rows: BTreeMap<usize, BTreeMap<String, Value>>,
     pub col_str_max_lenghts: BTreeMap<String, usize>,
     pub row_offset: usize,
@@ -30,6 +31,7 @@ impl Table {
         Table {
             name: name.to_owned(),
             columns,
+            column_types: BTreeMap::new(),
             rows: BTreeMap::new(),
             col_str_max_lenghts: BTreeMap::new(),
             row_offset,
@@ -44,6 +46,7 @@ impl Table {
         let f = BufReader::new(f);
         let columns = file_info.columns;
         let mut rows = BTreeMap::new();
+        let mut column_types: BTreeMap<String, Value> = BTreeMap::new();
         let mut idx_to_name: HashMap<u16, String> = HashMap::new();
         for (col_name, col_idx) in &columns {
             idx_to_name.insert(*col_idx, col_name.to_owned());
@@ -64,7 +67,10 @@ impl Table {
                                     idx
                                 )),
                             )?);
-                            if let Ok(value) = serde_json::from_str(value) {
+                            if let Ok::<Value, _>(value) = serde_json::from_str(value) {
+                                column_types
+                                    .entry(col_name.to_owned())
+                                    .or_insert(value.clone());
                                 row.insert(col_name.to_owned(), value);
                             }
                         }
@@ -80,6 +86,7 @@ impl Table {
         Ok(Table {
             name: opts.root_table_name.clone(),
             columns,
+            column_types,
             rows,
             row_offset: 0,
             appending_mode: false,
@@ -98,6 +105,9 @@ impl Table {
                 return Err(err::CsvError::MissingColumn(key.to_owned()));
             }
             let num_cols = self.columns.len() as u16;
+            self.column_types
+                .entry(key.to_owned())
+                .or_insert(val.clone());
             match val {
                 Value::String(s) => {
                     if let Some(cur_max) = self.col_str_max_lenghts.get(key) {
@@ -192,33 +202,25 @@ impl Table {
     fn create_table_sql(&self, _opts: &Opts) -> Result<String, err::CsvError> {
         let mut s = format!("CREATE TABLE IF NOT EXISTS {} (", self.name);
         let mut col_strings = Vec::with_capacity(self.columns.len());
-        if let Some(first_row) = self.rows.iter().next() {
-            for (col, _) in &self.columns {
-                if let Some(row_value) = first_row.1.get(col) {
-                    let col_name_str = match &row_value {
-                        Value::Number(_) => {
-                            format!("`{}` BIGINT", col) 
-                        }
-                        Value::String(_) => {
-                            let str_len: usize = if let Some(v) = self.col_str_max_lenghts.get(col) {
-                                *v
-                            } else {
-                                100
-                            };
-                            format!("`{}` VARCHAR({})", col, str_len) 
-                        }
-                        Value::Bool(_) => {
-                            format!("`{}` BOOL", col) 
-                        }
-                        _ => {
-                            panic!("While creating SQL table creation statement, ran into an unsupported datatype")
-                        }
+        for (col, value) in &self.column_types {
+            let col_name_str = match &value {
+                Value::Number(_) => format!("`{}` BIGINT", col),
+                Value::String(_) => {
+                    let str_len: usize = if let Some(v) = self.col_str_max_lenghts.get(col) {
+                        *v
+                    } else {
+                        100
                     };
-                    col_strings.push(col_name_str);
+                    format!("`{}` VARCHAR({})", col, str_len)
                 }
-            }
-            s.push_str(&format!("{})", col_strings.join(",")));
+                Value::Bool(_) => format!("`{}` BOOL", col),
+                _ => panic!(
+                    "While creating SQL table creation statement, ran into an unsupported datatype"
+                ),
+            };
+            col_strings.push(col_name_str);
         }
+        s.push_str(&format!("{})", col_strings.join(",")));
         Ok(s)
     }
 
@@ -226,7 +228,12 @@ impl Table {
         &self,
         row: &BTreeMap<String, Value>,
     ) -> Result<String, err::CsvError> {
-        let cols_str: Vec<String> = self.columns.keys().cloned().map( | cname | format!("`{}`", cname)).collect();
+        let cols_str: Vec<String> = self
+            .columns
+            .keys()
+            .cloned()
+            .map(|cname| format!("`{}`", cname))
+            .collect();
         let mut vals = Vec::new();
         for (col, _) in &self.columns {
             if let Some(val) = row.get(col) {
@@ -235,7 +242,12 @@ impl Table {
                 vals.push(format!("NULL"));
             }
         }
-        let s = format!("INSERT INTO `{}` ({}) VALUES ({})", self.name, cols_str.join(", "), vals.join(","));
+        let s = format!(
+            "INSERT INTO `{}` ({}) VALUES ({})",
+            self.name,
+            cols_str.join(", "),
+            vals.join(",")
+        );
         Ok(s)
     }
 
@@ -265,12 +277,14 @@ impl Table {
                 "{}/schema-{}-{}.sql",
                 &opts.out_folder, self.name, self.row_offset
             ))?);
-                if let Some(sql_file) = &mut sql_file {
-            match sql_file.write_all(sql.as_bytes()) {
-                Err(why) => return Err(err::CsvError::CouldNotWrite(format!("because {}", why))),
-                Ok(_) => (),
-            }
+            if let Some(sql_file) = &mut sql_file {
+                match sql_file.write_all(sql.as_bytes()) {
+                    Err(why) => {
+                        return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
+                    }
+                    Ok(_) => (),
                 }
+            }
         }
 
         let mut num_rows_added = 0;
@@ -280,12 +294,12 @@ impl Table {
                 row_str.push_str(";\n");
                 //println!("ROW: {}", &row_str);
                 if let Some(sql_file) = &mut sql_file {
-                match sql_file.write_all(row_str.as_bytes()) {
-                    Err(why) => {
-                        return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
+                    match sql_file.write_all(row_str.as_bytes()) {
+                        Err(why) => {
+                            return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
+                        }
+                        Ok(_) => (),
                     }
-                    Ok(_) => (),
-                }
                 }
             }
             let mut row_vec = Vec::new();
@@ -299,9 +313,7 @@ impl Table {
             let line = format!("\n{}", row_vec.join(","));
             num_rows_added += 1;
             match file.write_all(line.as_bytes()) {
-                Err(why) => {
-                    return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
-                }
+                Err(why) => return Err(err::CsvError::CouldNotWrite(format!("because {}", why))),
                 Ok(_) => (),
             }
         }
