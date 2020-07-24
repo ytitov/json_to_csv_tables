@@ -254,19 +254,23 @@ impl Table {
             }
         }
 
+        let mut sql_file = None;
+
         // handle sql output
         if opts.as_mysql {
             let mut sql = self.create_table_sql(opts)?;
             sql.push_str(";\n");
             //println!("SQL: {}", &sql);
-            file = find_or_create_file(&format!(
+            sql_file = Some(find_or_create_file(&format!(
                 "{}/schema-{}-{}.sql",
                 &opts.out_folder, self.name, self.row_offset
-            ))?;
-            match file.write_all(sql.as_bytes()) {
+            ))?);
+                if let Some(sql_file) = &mut sql_file {
+            match sql_file.write_all(sql.as_bytes()) {
                 Err(why) => return Err(err::CsvError::CouldNotWrite(format!("because {}", why))),
                 Ok(_) => (),
             }
+                }
         }
 
         let mut num_rows_added = 0;
@@ -275,11 +279,13 @@ impl Table {
                 let mut row_str = self.create_insert_row_statement(row)?;
                 row_str.push_str(";\n");
                 //println!("ROW: {}", &row_str);
-                match file.write_all(row_str.as_bytes()) {
+                if let Some(sql_file) = &mut sql_file {
+                match sql_file.write_all(row_str.as_bytes()) {
                     Err(why) => {
                         return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
                     }
                     Ok(_) => (),
+                }
                 }
             }
             let mut row_vec = Vec::new();
