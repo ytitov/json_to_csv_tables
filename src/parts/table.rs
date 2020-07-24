@@ -115,7 +115,9 @@ impl Table {
         let pk_idx = self.rows.len() + self.row_offset;
         row.entry(self.get_pk_name()).or_insert(Value::from(pk_idx));
         //println!("--> add_row {} - {:?}", pk_idx, &row);
-        self.rows.insert(pk_idx, row);
+        if self.opts.scan_only == false {
+            self.rows.insert(pk_idx, row);
+        }
         Ok(())
     }
 

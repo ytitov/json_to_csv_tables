@@ -30,6 +30,8 @@ pub struct Opts {
     pub json_buf_size: Option<usize>,
     #[clap(long, about = "Output mysql files")]
     pub as_mysql: bool,
+    #[clap(long, about = "Only scan, do not write rows.  The point is to scan the json and hopefully catch all of the fields")]
+    pub scan_only: bool,
 }
 
 struct CsvFileInfo {
