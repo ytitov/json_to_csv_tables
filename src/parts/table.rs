@@ -189,8 +189,9 @@ impl Table {
 
     fn create_table_sql(&self, _opts: &Opts) -> Result<String, err::CsvError> {
         let mut s = format!("CREATE TABLE IF NOT EXISTS {} (", self.name);
+        let mut col_strings = Vec::with_capacity(self.columns.len());
         if let Some(first_row) = self.rows.iter().next() {
-            for (col, idx) in &self.columns {
+            for (col, _) in &self.columns {
                 if let Some(row_value) = first_row.1.get(col) {
                     let col_name_str = match &row_value {
                         Value::Number(_) => {
@@ -211,13 +212,10 @@ impl Table {
                             panic!("While creating SQL table creation statement, ran into an unsupported datatype")
                         }
                     };
-                    s.push_str(&col_name_str);
-                    if (*idx as usize) < self.columns.len() - 1 {
-                        s.push_str(", ");
-                    }
+                    col_strings.push(col_name_str);
                 }
             }
-            s.push_str(")");
+            s.push_str(&format!("{})", col_strings.join(",")));
         }
         Ok(s)
     }
