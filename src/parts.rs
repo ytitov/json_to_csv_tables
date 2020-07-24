@@ -28,6 +28,8 @@ pub struct Opts {
         about = "Number of json objects to scan before writing to disk, if not specified, the full file is scanned into memory"
     )]
     pub json_buf_size: Option<usize>,
+    #[clap(long, about = "Output mysql files")]
+    pub as_mysql: bool,
 }
 
 struct CsvFileInfo {

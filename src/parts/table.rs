@@ -5,6 +5,7 @@ pub struct Table {
     pub name: String,
     pub columns: BTreeMap<String, u16>,
     pub rows: BTreeMap<usize, BTreeMap<String, Value>>,
+    pub col_str_max_lenghts: BTreeMap<String, usize>,
     pub row_offset: usize,
     /// are we appending to an existing CSV file and columns should be prespecified
     pub appending_mode: bool,
@@ -30,6 +31,7 @@ impl Table {
             name: name.to_owned(),
             columns,
             rows: BTreeMap::new(),
+            col_str_max_lenghts: BTreeMap::new(),
             row_offset,
             appending_mode,
             opts: opts.clone(),
@@ -81,6 +83,7 @@ impl Table {
             rows,
             row_offset: 0,
             appending_mode: false,
+            col_str_max_lenghts: BTreeMap::new(),
             opts: opts.clone(),
         })
     }
@@ -90,11 +93,23 @@ impl Table {
     }
 
     pub fn add_row(&mut self, mut row: BTreeMap<String, Value>) -> Result<(), err::CsvError> {
-        for (key, _) in &row {
+        for (key, val) in &row {
             if self.appending_mode == true && !self.columns.contains_key(key) {
                 return Err(err::CsvError::MissingColumn(key.to_owned()));
             }
             let num_cols = self.columns.len() as u16;
+            match val {
+                Value::String(s) => {
+                    if let Some(cur_max) = self.col_str_max_lenghts.get(key) {
+                        if *cur_max < s.len() {
+                            self.col_str_max_lenghts.insert(String::from(key), s.len());
+                        }
+                    } else {
+                        self.col_str_max_lenghts.insert(String::from(key), s.len());
+                    }
+                }
+                _ => {}
+            }
             self.columns.entry(key.to_owned()).or_insert(num_cols);
         }
         let pk_idx = self.rows.len() + self.row_offset;
@@ -124,7 +139,11 @@ impl Table {
         self.columns
             .entry(self.get_pk_name())
             .or_insert(col_idx as u16);
-        println!("    export_csv num_rows: {} - {:?}", &self.name, &self.rows.len());
+        println!(
+            "    export_csv num_rows: {} - {:?}",
+            &self.name,
+            &self.rows.len()
+        );
 
         let mut file = find_or_create_file(&fname)?;
 
@@ -168,13 +187,65 @@ impl Table {
         Ok(())
     }
 
+    fn create_table_sql(&self, _opts: &Opts) -> Result<String, err::CsvError> {
+        let mut s = format!("CREATE TABLE IF NOT EXISTS {} (", self.name);
+        if let Some(first_row) = self.rows.iter().next() {
+            for (col, idx) in &self.columns {
+                if let Some(row_value) = first_row.1.get(col) {
+                    let col_name_str = match &row_value {
+                        Value::Number(_) => {
+                            format!("`{}` BIGINT", col) 
+                        }
+                        Value::String(_) => {
+                            let str_len: usize = if let Some(v) = self.col_str_max_lenghts.get(col) {
+                                *v
+                            } else {
+                                100
+                            };
+                            format!("`{}` VARCHAR({})", col, str_len) 
+                        }
+                        Value::Bool(_) => {
+                            format!("`{}` BOOL", col) 
+                        }
+                        _ => {
+                            panic!("While creating SQL table creation statement, ran into an unsupported datatype")
+                        }
+                    };
+                    s.push_str(&col_name_str);
+                    if (*idx as usize) < self.columns.len() - 1 {
+                        s.push_str(", ");
+                    }
+                }
+            }
+            s.push_str(")");
+        }
+        Ok(s)
+    }
+
+    fn create_insert_row_statement(
+        &self,
+        row: &BTreeMap<String, Value>,
+    ) -> Result<String, err::CsvError> {
+        let cols_str: Vec<String> = self.columns.keys().cloned().map( | cname | format!("`{}`", cname)).collect();
+        let mut vals = Vec::new();
+        for (col, _) in &self.columns {
+            if let Some(val) = row.get(col) {
+                vals.push(format!("{}", val));
+            } else {
+                vals.push(format!("NULL"));
+            }
+        }
+        let s = format!("INSERT INTO `{}` ({}) VALUES ({})", self.name, cols_str.join(", "), vals.join(","));
+        Ok(s)
+    }
+
     /// writes what is currently in the buffer, updates rows_offset and clears the rows
     pub fn flush_to_file(&mut self, opts: &Opts) -> Result<(), err::CsvError> {
         let fname = format!("{}/{}.csv", &opts.out_folder, &self.name);
         let csv_info = get_csv_file_info(&fname);
         let mut file = find_or_create_file(&fname)?;
         if csv_info.lines_in_file == 0 {
-        //if self.appending_mode == false {
+            //if self.appending_mode == false {
             let columns_str = self.columns_as_str();
             println!("flush_to_file columns: {:?}", &columns_str);
             match file.write_all(columns_str.as_bytes()) {
@@ -183,8 +254,34 @@ impl Table {
             }
         }
 
+        // handle sql output
+        if opts.as_mysql {
+            let mut sql = self.create_table_sql(opts)?;
+            sql.push_str(";\n");
+            //println!("SQL: {}", &sql);
+            file = find_or_create_file(&format!(
+                "{}/schema-{}-{}.sql",
+                &opts.out_folder, self.name, self.row_offset
+            ))?;
+            match file.write_all(sql.as_bytes()) {
+                Err(why) => return Err(err::CsvError::CouldNotWrite(format!("because {}", why))),
+                Ok(_) => (),
+            }
+        }
+
         let mut num_rows_added = 0;
         for (_, row) in &self.rows {
+            if opts.as_mysql {
+                let mut row_str = self.create_insert_row_statement(row)?;
+                row_str.push_str(";\n");
+                //println!("ROW: {}", &row_str);
+                match file.write_all(row_str.as_bytes()) {
+                    Err(why) => {
+                        return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
+                    }
+                    Ok(_) => (),
+                }
+            }
             let mut row_vec = Vec::new();
             for (col, _) in &self.columns {
                 if let Some(val) = row.get(col) {
@@ -196,14 +293,19 @@ impl Table {
             let line = format!("\n{}", row_vec.join(","));
             num_rows_added += 1;
             match file.write_all(line.as_bytes()) {
-                Err(why) => return Err(err::CsvError::CouldNotWrite(format!("because {}", why))),
+                Err(why) => {
+                    return Err(err::CsvError::CouldNotWrite(format!("because {}", why)))
+                }
                 Ok(_) => (),
             }
         }
 
         self.row_offset += num_rows_added;
         //println!("    row offset: {} - {:?}", &self.name, self.row_offset);
-        println!("[{}] - flushed {} lines.  Total: {}", self.name, num_rows_added, self.row_offset);
+        println!(
+            "[{}] - flushed {} lines.  Total: {}",
+            self.name, num_rows_added, self.row_offset
+        );
         self.rows = BTreeMap::new();
 
         Ok(())
