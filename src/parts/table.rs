@@ -203,7 +203,7 @@ impl Table {
     }
 
     fn create_table_sql(&self, _opts: &Opts) -> Result<String, err::CsvError> {
-        let mut s = format!("CREATE TABLE IF NOT EXISTS {} (", self.name);
+        let mut s = format!("CREATE TABLE IF NOT EXISTS `{}` (", self.name);
         let mut col_strings = Vec::with_capacity(self.columns.len());
         for (col, value) in &self.column_types {
             let col_name_str = match &value {
