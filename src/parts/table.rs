@@ -143,6 +143,8 @@ impl Table {
         columns_str
     }
 
+    /*
+     * this is replaced by flush to file, keeping it for reference for now
     pub fn export_csv(mut self, opts: &Opts) -> Result<(), err::CsvError> {
         use std::io::prelude::*;
         use std::path::Path;
@@ -201,6 +203,7 @@ impl Table {
         println!("successfully wrote to {}", display);
         Ok(())
     }
+    */
 
     fn create_table_sql(&self, _opts: &Opts) -> Result<String, err::CsvError> {
         let mut s = format!("CREATE TABLE IF NOT EXISTS `{}` (", self.name);

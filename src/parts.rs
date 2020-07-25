@@ -270,13 +270,6 @@ impl Schema {
         }
     }
 
-    pub fn export_csv(self) -> Result<(), err::CsvError> {
-        for (_, table) in self.data {
-            table.export_csv(&self.opts)?;
-        }
-        Ok(())
-    }
-
     pub fn process_file(mut self) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let f = File::open(&self.opts.in_file)?;
         let f = BufReader::new(f);
@@ -304,7 +297,10 @@ impl Schema {
             }
         }
 
-        self.export_csv()?;
+        for (_, table) in &mut self.data {
+            table.flush_to_file(&self.opts)?;
+        }
+
 
         Ok(())
     }

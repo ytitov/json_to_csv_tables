@@ -16,7 +16,7 @@ fn main() {
                 }
                 let col_idx = table.columns.len();
                 table.columns.entry(add_column_name.to_owned()).or_insert(col_idx as u16);
-                table.export_csv(&opts);
+                table.flush_to_file(&opts).expect("Encounter a fatal error trying to write to files");
             }
             Err(e) => {
                 println!("{}", e);
